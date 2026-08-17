@@ -27,7 +27,15 @@ export function extractiveEvidence(question: string, facts: RetrievedFact[]): st
     ...item,
     score: queryTerms.filter((term) => item.sentence.toLowerCase().includes(term)).length + item.fact.relevance * 0.1,
   })).sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance);
-  const selected = ranked.filter((item, index) => item.score > 0 && ranked.findIndex((other) => other.sentence === item.sentence) === index).slice(0, 3);
+  const bestPerFact = new Map<RetrievedFact, typeof ranked[number]>();
+  for (const item of ranked) {
+    const current = bestPerFact.get(item.fact);
+    if (!current || item.score > current.score) bestPerFact.set(item.fact, item);
+  }
+  const selected = [...bestPerFact.values()]
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance)
+    .slice(0, 4);
   return selected.length ? selected.map((item) => item.sentence).join(" ") : compactFacts(facts).slice(0, 3).map(factLine).join("; ");
 }
 
