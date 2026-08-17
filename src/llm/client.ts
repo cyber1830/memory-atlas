@@ -3,6 +3,7 @@ import { RetrievedFact } from "../types";
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/api/generate";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b";
 const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS ?? 30000);
+const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 8192);
 
 function factLine(f: RetrievedFact): string {
   const temporal = f.temporalDetails ? ` (${f.temporalDetails})` : "";
@@ -18,7 +19,7 @@ async function askOllama(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise
     const response = await fetch(OLLAMA_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0 } }),
+      body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0, num_ctx: OLLAMA_NUM_CTX } }),
       signal: controller.signal,
     });
     if (!response.ok) return null;
@@ -64,8 +65,13 @@ export async function generateAnswer(question: string, facts: RetrievedFact[]): 
 
 /** Real long-context baseline: sends the complete history to the local model. */
 export async function naiveLongContextAnswer(question: string, fullHistory: string): Promise<string> {
+  const maxChars = Number(process.env.BASELINE_MAX_CHARS ?? 20000);
+  const boundedHistory = maxChars > 0 && fullHistory.length > maxChars
+    ? `${fullHistory.slice(0, Math.floor(maxChars / 2))}\n...[history capped for local baseline]...\n${fullHistory.slice(-Math.floor(maxChars / 2))}`
+    : fullHistory;
+  console.log(`[baseline] history=${fullHistory.length} chars, sent=${boundedHistory.length} chars`);
   const answer = await askOllama(
-    `Answer the question using the complete conversation history below. Do not use outside knowledge. If the answer is not present, say I don't know.\nHistory:\n${fullHistory}\n\nQuestion: ${question}`,
+    `Answer the question using the conversation history below. Do not use outside knowledge. If the answer is not present, say I don't know.\nHistory:\n${boundedHistory}\n\nQuestion: ${question}`,
     Math.max(OLLAMA_TIMEOUT_MS, 60000)
   );
   // Keep infrastructure failure distinguishable from a genuine abstention;
