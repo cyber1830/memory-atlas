@@ -77,7 +77,7 @@ function roughMatch(predicted: string, gold: string): boolean {
 async function runOurSystem(instance: EvalInstance) {
   const userId = `eval-${instance.question_id}`.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-  for (const session of instance.sessions) {
+  if (process.env.EVAL_REUSE !== "1") for (const session of instance.sessions) {
     const chunks = chunkTranscript(sessionToTranscript(session.turns));
     for (let index = 0; index < chunks.length; index += 1) {
       await ingestWithRetry({
@@ -94,20 +94,21 @@ async function runOurSystem(instance: EvalInstance) {
   // Ingestion is processed asynchronously by HydraDB — give it a moment
   // before querying. For a real run, poll client.context.status per
   // source instead of a flat sleep; this is the hackathon-time shortcut.
-  await new Promise((r) => setTimeout(r, 4000));
+  if (process.env.EVAL_REUSE !== "1") await new Promise((r) => setTimeout(r, 4000));
 
   const recallResult = await recallMemory({ userId, question: instance.question });
   const { facts, maxChunkScore } = flattenGraphContext(recallResult.data);
   const abstention = await abstentionCheck(instance.question, facts, maxChunkScore);
 
   if (abstention.verdict === "abstain") {
-    return { predicted: "[ABSTAIN]", verdict: abstention.verdict };
+    return { predicted: "[ABSTAIN]", verdict: abstention.verdict, factCount: facts.length, reason: abstention.reason };
   }
   const answer = await generateAnswer(instance.question, facts);
-  return { predicted: answer, verdict: abstention.verdict };
+  return { predicted: answer, verdict: abstention.verdict, factCount: facts.length, reason: abstention.reason };
 }
 
 async function runNaiveBaseline(instance: EvalInstance) {
+  if (process.env.EVAL_NO_BASELINE === "1") return { predicted: "[BASELINE_SKIPPED]" };
   const fullHistory = instance.sessions
     .map((s) => `--- session ${s.session_id} (${s.timestamp}) ---\n${sessionToTranscript(s.turns)}`)
     .join("\n\n");
@@ -134,6 +135,7 @@ async function main() {
   console.log(`Running ${instances.length} of ${allInstances.length} LongMemEval questions.`);
 
   const results: Record<string, { ours: number; naive: number; total: number }> = {};
+  const diagnostics: unknown[] = [];
 
   for (const instance of instances) {
     const type = instance.question_type ?? "unknown";
@@ -158,6 +160,15 @@ async function main() {
     if (oursCorrect) results[type].ours += 1;
     if (naiveCorrect) results[type].naive += 1;
 
+    diagnostics.push({
+      question_id: instance.question_id,
+      question_type: type,
+      question: instance.question,
+      gold_answer: instance.answer,
+      ours: { predicted: ours.predicted, verdict: ours.verdict, fact_count: ours.factCount, reason: ours.reason, correct: oursCorrect },
+      naive: { predicted: naive.predicted, correct: naiveCorrect },
+    });
+
     console.log(`[${type}] ${instance.question_id}: ours=${oursCorrect ? "✓" : "✗"} naive=${naiveCorrect ? "✓" : "✗"}`);
   }
 
@@ -170,6 +181,9 @@ async function main() {
       n: r.total,
     }))
   );
+  const diagnosticsPath = path.join(process.cwd(), "data", "eval-results.json");
+  fs.writeFileSync(diagnosticsPath, JSON.stringify(diagnostics, null, 2));
+  console.log(`Detailed diagnostics written to ${diagnosticsPath}`);
 }
 
 main();
