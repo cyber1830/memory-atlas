@@ -1,0 +1,13 @@
+services:
+  memory-layer:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+
+  # HydraDB itself is used as a hosted service (https://api.hydradb.com) via
+  # HYDRA_DB_API_KEY in .env, not run locally — no service block needed here.
+  # If you're building against the open-sourced HydraDB repo directly
+  # instead of the hosted API, add a service here per its own docker
+  # instructions and point HYDRA_DB_API_KEY / base URL at it.

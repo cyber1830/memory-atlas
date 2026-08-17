@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+*.log
+
+# Benchmark downloads are large and may have separate dataset licenses.
+data/official/

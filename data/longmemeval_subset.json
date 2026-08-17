@@ -1,0 +1,42 @@
+[
+  {
+    "question_id": "example-knowledge-update-1",
+    "question": "Where does the user currently work?",
+    "answer": "Globex",
+    "question_type": "knowledge-update",
+    "sessions": [
+      {
+        "session_id": "s1",
+        "timestamp": "2026-01-05T10:00:00Z",
+        "turns": [
+          { "role": "user", "content": "I just started a new job at Initech as a backend engineer." },
+          { "role": "assistant", "content": "Congrats on the new role at Initech!" }
+        ]
+      },
+      {
+        "session_id": "s2",
+        "timestamp": "2026-05-12T10:00:00Z",
+        "turns": [
+          { "role": "user", "content": "Quick update - I left Initech last month and I'm now at Globex, still backend focused." },
+          { "role": "assistant", "content": "Nice, how's Globex treating you so far?" }
+        ]
+      }
+    ]
+  },
+  {
+    "question_id": "example-abstention-1",
+    "question": "What is the user's favorite programming language?",
+    "answer": "",
+    "question_type": "abstention",
+    "sessions": [
+      {
+        "session_id": "s1",
+        "timestamp": "2026-01-05T10:00:00Z",
+        "turns": [
+          { "role": "user", "content": "I just started a new job at Initech as a backend engineer." },
+          { "role": "assistant", "content": "Congrats on the new role at Initech!" }
+        ]
+      }
+    ]
+  }
+]
