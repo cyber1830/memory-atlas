@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "eval": "ts-node-dev --transpile-only src/eval/runLongMemEval.ts",
     "eval:normalize": "ts-node-dev --transpile-only src/eval/normalizeLongMemEval.ts"
+    ,"test:extractive": "npm run build && node dist/eval/testExtractive.js"
   },
   "dependencies": {
     "@hydradb/sdk": "^2.1.2",

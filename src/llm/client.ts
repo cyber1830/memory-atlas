@@ -16,7 +16,7 @@ function compactFacts(facts: RetrievedFact[]): RetrievedFact[] {
   return facts.slice().sort((a, b) => b.relevance - a.relevance).slice(0, 8);
 }
 
-function extractiveEvidence(question: string, facts: RetrievedFact[]): string {
+export function extractiveEvidence(question: string, facts: RetrievedFact[]): string {
   const ignored = new Set("what where when who why how did does is are was were the a an my me i user your to of in on for with and or".split(" "));
   const queryTerms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
   const candidates = facts.flatMap((fact) => {
@@ -25,7 +25,7 @@ function extractiveEvidence(question: string, facts: RetrievedFact[]): string {
   }).filter((item) => item.sentence.length > 20);
   const ranked = candidates.map((item) => ({
     ...item,
-    score: queryTerms.filter((term) => item.sentence.toLowerCase().includes(term)).length,
+    score: queryTerms.filter((term) => item.sentence.toLowerCase().includes(term)).length + item.fact.relevance * 0.1,
   })).sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance);
   const selected = ranked.filter((item, index) => item.score > 0 && ranked.findIndex((other) => other.sentence === item.sentence) === index).slice(0, 3);
   return selected.length ? selected.map((item) => item.sentence).join(" ") : compactFacts(facts).slice(0, 3).map(factLine).join("; ");
@@ -77,7 +77,7 @@ export async function generateAnswer(question: string, facts: RetrievedFact[]): 
     `Answer the question using ONLY the retrieved evidence. Preserve chronology when facts conflict, distinguish entities from roles/attributes, and cite session IDs when present. If the evidence is insufficient, say so plainly.\nQuestion: ${question}\nRetrieved evidence:\n${evidence.map(factLine).join("\n")}`
   );
   if (answer) return answer;
-  return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, evidence)}`;
+  return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, facts)}`;
 }
 
 /** Real long-context baseline: sends the complete history to the local model. */
