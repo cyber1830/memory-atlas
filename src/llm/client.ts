@@ -68,5 +68,7 @@ export async function naiveLongContextAnswer(question: string, fullHistory: stri
     `Answer the question using the complete conversation history below. Do not use outside knowledge. If the answer is not present, say I don't know.\nHistory:\n${fullHistory}\n\nQuestion: ${question}`,
     Math.max(OLLAMA_TIMEOUT_MS, 60000)
   );
-  return answer ?? "I don't know (baseline model unavailable).";
+  // Keep infrastructure failure distinguishable from a genuine abstention;
+  // the evaluator must never count this as a correct baseline answer.
+  return answer ?? "[BASELINE_UNAVAILABLE]";
 }
