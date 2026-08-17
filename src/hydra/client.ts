@@ -19,19 +19,21 @@ export const hydra = new HydraDBClient({
  * querying before readyForIngestion is true will fail, so every server
  * boot calls this once before accepting traffic (see src/index.ts).
  */
-export async function ensureDatabaseReady(database: string = DATABASE): Promise<void> {
+export async function ensureDatabaseReady(
+  database: string = DATABASE,
+): Promise<void> {
   try {
     await hydra.databases.create({ database });
-  } catch {
-    // Already exists — fine, fall through to the readiness poll.
-  }
+  } catch {}
 
   for (let attempt = 0; attempt < 30; attempt++) {
     const status = await hydra.databases.status({ database });
     if (status.data?.infra?.readyForIngestion) return;
     await new Promise((r) => setTimeout(r, 2000));
   }
-  throw new Error(`HydraDB database "${database}" did not become ready in time`);
+  throw new Error(
+    `HydraDB database "${database}" did not become ready in time`,
+  );
 }
 
 /**
@@ -81,13 +83,22 @@ export async function waitForIngestion(params: {
       collection: params.userId,
       ids: params.sourceIds,
     });
-    statuses = (result.data?.statuses ?? []).map((item: any) => item.indexingStatus ?? item.indexing_status ?? "unknown");
-    if (statuses.length === params.sourceIds.length && statuses.every((status) => ["completed", "errored", "failed"].includes(status))) {
+    statuses = (result.data?.statuses ?? []).map(
+      (item: any) => item.indexingStatus ?? item.indexing_status ?? "unknown",
+    );
+    if (
+      statuses.length === params.sourceIds.length &&
+      statuses.every((status) =>
+        ["completed", "errored", "failed"].includes(status),
+      )
+    ) {
       return statuses;
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
-  throw new Error(`Timed out waiting for HydraDB indexing (last statuses: ${statuses.join(", ") || "unknown"})`);
+  throw new Error(
+    `Timed out waiting for HydraDB indexing (last statuses: ${statuses.join(", ") || "unknown"})`,
+  );
 }
 
 /**
@@ -96,7 +107,10 @@ export async function waitForIngestion(params: {
  * across corpus/queryBy/mode internally rather than us stitching a vector
  * shortlist and a separate graph traversal together by hand.
  */
-export async function recallMemory(params: { userId: string; question: string }) {
+export async function recallMemory(params: {
+  userId: string;
+  question: string;
+}) {
   return hydra.query({
     query: params.question,
     database: DATABASE,
@@ -123,7 +137,10 @@ export async function recallMemory(params: { userId: string; question: string })
  * these arrive in the API's raw snake_case wire format. Read both
  * spellings defensively rather than assuming one.
  */
-function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string | undefined {
+function pick(
+  obj: Record<string, unknown> | undefined,
+  ...keys: string[]
+): string | undefined {
   if (!obj) return undefined;
   for (const key of keys) {
     const val = obj[key];
@@ -133,14 +150,17 @@ function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): stri
 }
 
 export function flattenGraphContext(
-  queryResult: Awaited<ReturnType<typeof recallMemory>>["data"]
+  queryResult: Awaited<ReturnType<typeof recallMemory>>["data"],
 ): { facts: RetrievedFact[]; maxChunkScore: number } {
   const facts: RetrievedFact[] = [];
-  const maxChunkScore = Math.max(0, ...(queryResult?.chunks ?? []).map((c) => c.relevancyScore ?? 0));
+  const maxChunkScore = Math.max(
+    0,
+    ...(queryResult?.chunks ?? []).map((c) => c.relevancyScore ?? 0),
+  );
 
   const paths = queryResult?.graphContext?.queryPaths?.length
     ? queryResult.graphContext.queryPaths
-    : queryResult?.graphContext?.chunkRelations ?? [];
+    : (queryResult?.graphContext?.chunkRelations ?? []);
   for (const path of paths) {
     for (const triplet of path.triplets ?? []) {
       const source = triplet.source as Record<string, unknown> | undefined;
@@ -148,14 +168,24 @@ export function flattenGraphContext(
       const relation = triplet.relation as Record<string, unknown> | undefined;
 
       facts.push({
-        sourceEntity: pick(source, "name", "entity_id", "entityId") ?? "unknown",
-        targetEntity: pick(target, "name", "entity_id", "entityId") ?? "unknown",
+        sourceEntity:
+          pick(source, "name", "entity_id", "entityId") ?? "unknown",
+        targetEntity:
+          pick(target, "name", "entity_id", "entityId") ?? "unknown",
         predicate:
-          pick(relation, "canonical_predicate", "canonicalPredicate", "raw_predicate", "rawPredicate") ??
-          "related_to",
+          pick(
+            relation,
+            "canonical_predicate",
+            "canonicalPredicate",
+            "raw_predicate",
+            "rawPredicate",
+          ) ?? "related_to",
         timestamp: pick(relation, "timestamp"),
         temporalDetails: pick(relation, "temporal_details", "temporalDetails"),
-        confidence: relation && typeof relation["confidence"] === "number" ? (relation["confidence"] as number) : undefined,
+        confidence:
+          relation && typeof relation["confidence"] === "number"
+            ? (relation["confidence"] as number)
+            : undefined,
         evidenceText: pick(relation, "context"),
         relevance: path.relevancyScore ?? maxChunkScore ?? 0.5,
       });
@@ -168,13 +198,25 @@ export function flattenGraphContext(
   if (facts.length === 0) {
     for (const chunk of queryResult?.chunks ?? []) {
       const raw = chunk as any;
-      const text = raw.text ?? raw.content ?? raw.memory ?? raw.document ?? raw.chunk;
+      const text =
+        raw.text ??
+        raw.content ??
+        raw.chunkContent ??
+        raw.memory ??
+        raw.document ??
+        raw.chunk;
       if (typeof text !== "string" || !text.trim()) continue;
       facts.push({
         sourceEntity: "retrieved memory",
         targetEntity: text.slice(0, 500),
         predicate: "supports",
         evidenceText: text,
+        sessionId:
+          raw.additionalMetadata?.session_id ??
+          raw.additional_metadata?.session_id,
+        timestamp:
+          raw.additionalMetadata?.timestamp ??
+          raw.additional_metadata?.timestamp,
         relevance: raw.relevancyScore ?? raw.score ?? 0,
       });
     }
