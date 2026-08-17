@@ -8,7 +8,27 @@ const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 8192);
 function factLine(f: RetrievedFact): string {
   const temporal = f.temporalDetails ? ` (${f.temporalDetails})` : "";
   const session = f.sessionId ? ` [${f.sessionId}]` : "";
-  return `${f.sourceEntity} ${f.predicate} ${f.targetEntity}${temporal}${session}`;
+  const target = f.targetEntity.length > 700 ? `${f.targetEntity.slice(0, 700)}…` : f.targetEntity;
+  return `${f.sourceEntity} ${f.predicate} ${target}${temporal}${session}`;
+}
+
+function compactFacts(facts: RetrievedFact[]): RetrievedFact[] {
+  return facts.slice().sort((a, b) => b.relevance - a.relevance).slice(0, 8);
+}
+
+function extractiveEvidence(question: string, facts: RetrievedFact[]): string {
+  const ignored = new Set("what where when who why how did does is are was were the a an my me i user your to of in on for with and or".split(" "));
+  const queryTerms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
+  const candidates = facts.flatMap((fact) => {
+    const text = fact.evidenceText ?? fact.targetEntity;
+    return text.split(/(?<=[.!?])\s+|\n+/).map((sentence) => ({ sentence: sentence.trim(), fact }));
+  }).filter((item) => item.sentence.length > 20);
+  const ranked = candidates.map((item) => ({
+    ...item,
+    score: queryTerms.filter((term) => item.sentence.toLowerCase().includes(term)).length,
+  })).sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance);
+  const selected = ranked.filter((item, index) => item.score > 0 && ranked.findIndex((other) => other.sentence === item.sentence) === index).slice(0, 3);
+  return selected.length ? selected.map((item) => item.sentence).join(" ") : compactFacts(facts).slice(0, 3).map(factLine).join("; ");
 }
 
 async function askOllama(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise<string | null> {
@@ -38,8 +58,9 @@ export async function judgeEntailment(
   facts: RetrievedFact[]
 ): Promise<"entailed" | "partial" | "unsupported"> {
   if (facts.length === 0) return "unsupported";
+  const evidence = compactFacts(facts);
   const verdict = await askOllama(
-    `Given ONLY the retrieved evidence below, classify whether the question is answerable. Reply with exactly one word: entailed, partial, or unsupported.\nQuestion: ${question}\nEvidence:\n${facts.map(factLine).join("\n")}`
+    `Given ONLY the retrieved evidence below, classify whether the question is answerable. Reply with exactly one word: entailed, partial, or unsupported.\nQuestion: ${question}\nEvidence:\n${evidence.map(factLine).join("\n")}`
   );
   if (verdict?.toLowerCase().includes("entailed")) return "entailed";
   if (verdict?.toLowerCase().includes("partial")) return "partial";
@@ -51,16 +72,12 @@ export async function judgeEntailment(
 
 /** Model answer grounded only in the facts HydraDB returned. */
 export async function generateAnswer(question: string, facts: RetrievedFact[]): Promise<string> {
+  const evidence = compactFacts(facts);
   const answer = await askOllama(
-    `Answer the question using ONLY the retrieved evidence. Preserve chronology when facts conflict, distinguish entities from roles/attributes, and cite session IDs when present. If the evidence is insufficient, say so plainly.\nQuestion: ${question}\nRetrieved evidence:\n${facts.map(factLine).join("\n")}`
+    `Answer the question using ONLY the retrieved evidence. Preserve chronology when facts conflict, distinguish entities from roles/attributes, and cite session IDs when present. If the evidence is insufficient, say so plainly.\nQuestion: ${question}\nRetrieved evidence:\n${evidence.map(factLine).join("\n")}`
   );
   if (answer) return answer;
-  return facts
-    .slice()
-    .sort((a, b) => b.relevance - a.relevance)
-    .slice(0, 4)
-    .map(factLine)
-    .join("; ");
+  return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, evidence)}`;
 }
 
 /** Real long-context baseline: sends the complete history to the local model. */
