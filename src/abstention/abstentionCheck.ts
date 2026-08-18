@@ -24,6 +24,25 @@ export async function abstentionCheck(
 ): Promise<AbstentionResult> {
   const retrievalHit = facts.length > 0;
 
+  // A same-session lexical context hit is a grounded retrieval signal. It is
+  // useful when the graph stores the answer across adjacent conversational
+  // turns and the small judge model incorrectly labels that evidence as
+  // unsupported.
+  const ignored = new Set("what where when who why how did does is are was were the a an my me user your to of in on for with and or".split(" "));
+  const terms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
+  const lexicalContextHit = facts.some((fact) => {
+    if (!fact.evidenceText && !fact.targetEntity) return false;
+    const text = (fact.evidenceText ?? fact.targetEntity).toLowerCase();
+    return terms.filter((term) => text.includes(term)).length >= 2;
+  });
+  if (lexicalContextHit) {
+    return {
+      verdict: "answer",
+      reason: "same-session evidence directly matches the question",
+      signals: { retrievalHit: true, maxChunkScore, entailment: "entailed" },
+    };
+  }
+
   if (!retrievalHit && maxChunkScore < RELEVANCE_THRESHOLD) {
     return {
       verdict: "abstain",

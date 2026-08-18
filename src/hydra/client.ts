@@ -192,6 +192,29 @@ export function flattenGraphContext(
     }
   }
 
+  // Keep the highest-ranked raw chunks alongside graph relations. Some
+  // precise details (names, titles, stores) may be present in the chunk but
+  // not promoted into a relation context.
+  const topChunks = (queryResult?.chunks ?? [])
+    .slice()
+    .sort((a, b) => (b.relevancyScore ?? 0) - (a.relevancyScore ?? 0))
+    .slice(0, 15);
+  for (const chunk of topChunks) {
+    const raw = chunk as any;
+    const text = raw.chunkContent ?? raw.text ?? raw.content;
+    if (typeof text === "string" && text.trim()) {
+      facts.push({
+        sourceEntity: "retrieved memory",
+        targetEntity: text,
+        predicate: "contains",
+        evidenceText: text,
+        sessionId: raw.additionalMetadata?.session_id ?? raw.additional_metadata?.session_id,
+        timestamp: raw.additionalMetadata?.timestamp ?? raw.additional_metadata?.timestamp,
+        relevance: raw.relevancyScore ?? 0,
+      });
+    }
+  }
+
   // Sparse/new graphs can return a relevant chunk without a graph path yet.
   // Preserve that evidence instead of converting a real retrieval hit into
   // an empty fact set and an unnecessary abstention.

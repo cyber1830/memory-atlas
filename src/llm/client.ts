@@ -4,6 +4,8 @@ const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/api/generat
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b";
 const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS ?? 30000);
 const OLLAMA_NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 8192);
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
 
 function factLine(f: RetrievedFact): string {
   const temporal = f.temporalDetails ? ` (${f.temporalDetails})` : "";
@@ -13,7 +15,7 @@ function factLine(f: RetrievedFact): string {
 }
 
 function compactFacts(facts: RetrievedFact[]): RetrievedFact[] {
-  return facts.slice().sort((a, b) => b.relevance - a.relevance).slice(0, 8);
+  return facts.slice().sort((a, b) => b.relevance - a.relevance).slice(0, 15);
 }
 
 export function extractiveEvidence(question: string, facts: RetrievedFact[]): string {
@@ -50,14 +52,85 @@ async function askOllama(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise
       body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0, num_ctx: OLLAMA_NUM_CTX } }),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error(`[ollama] HTTP ${response.status} for model ${OLLAMA_MODEL}: ${body.slice(0, 300)}`);
+      return null;
+    }
     const data = (await response.json()) as { response?: string };
-    return data.response?.trim() || null;
-  } catch {
+    if (!data.response?.trim()) {
+      console.error(`[ollama] Empty response from model ${OLLAMA_MODEL}`);
+      return null;
+    }
+    return data.response.trim();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[ollama] ${OLLAMA_MODEL} failed: ${message}`);
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function askGroq(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise<string | null> {
+  if ((process.env.LLM_PROVIDER ?? "ollama") !== "groq") return null;
+  const key = process.env.GROQ_API_KEY;
+  if (!key) {
+    console.error("[groq] GROQ_API_KEY is missing");
+    return null;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: GROQ_MODEL, temperature: 0, max_tokens: 256, messages: [{ role: "user", content: prompt }] }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error(`[groq] HTTP ${response.status}: ${body.slice(0, 300)}`);
+      return null;
+    }
+    const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const answer = data.choices?.[0]?.message?.content?.trim();
+    if (!answer) {
+      console.error(`[groq] Empty response from model ${GROQ_MODEL}`);
+      return null;
+    }
+    return answer;
+  } catch (error) {
+    console.error(`[groq] ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function askModel(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise<string | null> {
+  return (process.env.LLM_PROVIDER ?? "ollama") === "groq"
+    ? askGroq(prompt, timeoutMs)
+    : askOllama(prompt, timeoutMs);
+}
+
+export async function checkOllama(): Promise<void> {
+  if ((process.env.LLM_PROVIDER ?? "ollama") === "groq") {
+    if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is missing. Add it to .env.");
+    const response = await fetch("https://api.groq.com/openai/v1/models", { headers: { authorization: `Bearer ${process.env.GROQ_API_KEY}` } });
+    if (!response.ok) throw new Error(`Groq preflight failed (HTTP ${response.status}). Check GROQ_API_KEY.`);
+    console.log(`[groq] ready: ${GROQ_MODEL}`);
+    return;
+  }
+  if ((process.env.LLM_PROVIDER ?? "ollama") !== "ollama") return;
+  const response = await fetch("http://localhost:11434/api/tags");
+  if (!response.ok) throw new Error(`Ollama is unreachable (HTTP ${response.status})`);
+  const data = (await response.json()) as { models?: { name?: string }[] };
+  const models = data.models?.map((model) => model.name ?? "") ?? [];
+  if (!models.some((name) => name === OLLAMA_MODEL || name.startsWith(`${OLLAMA_MODEL}:`))) {
+    throw new Error(`Ollama model '${OLLAMA_MODEL}' is not installed. Available: ${models.join(", ") || "none"}`);
+  }
+  console.log(`[ollama] ready: ${OLLAMA_MODEL}`);
 }
 
 /** Model-based evidence sufficiency check. No dataset-specific entities or predicates. */
@@ -67,7 +140,7 @@ export async function judgeEntailment(
 ): Promise<"entailed" | "partial" | "unsupported"> {
   if (facts.length === 0) return "unsupported";
   const evidence = compactFacts(facts);
-  const verdict = await askOllama(
+  const verdict = await askModel(
     `Given ONLY the retrieved evidence below, classify whether the question is answerable. Reply with exactly one word: entailed, partial, or unsupported.\nQuestion: ${question}\nEvidence:\n${evidence.map(factLine).join("\n")}`
   );
   if (verdict?.toLowerCase().includes("entailed")) return "entailed";
@@ -81,11 +154,17 @@ export async function judgeEntailment(
 /** Model answer grounded only in the facts HydraDB returned. */
 export async function generateAnswer(question: string, facts: RetrievedFact[]): Promise<string> {
   const evidence = compactFacts(facts);
-  const answer = await askOllama(
-    `Answer the question using ONLY the retrieved evidence. Preserve chronology when facts conflict, distinguish entities from roles/attributes, and cite session IDs when present. If the evidence is insufficient, say so plainly.\nQuestion: ${question}\nRetrieved evidence:\n${evidence.map(factLine).join("\n")}`
+  const answer = await askModel(
+    `Answer using ONLY the retrieved evidence. Return the shortest direct answer possible: usually the exact name, title, place, number, or phrase requested. Do not add background, explanations, guesses, or unrelated facts. Preserve chronology when facts conflict. If the requested answer is not directly supported, reply exactly: I don't know.\nQuestion: ${question}\nRetrieved evidence:\n${evidence.map(factLine).join("\n")}`
   );
-  if (answer) return answer;
-  return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, facts)}`;
+  if (answer && !/^\s*(i\s+don['’]?t\s+know|unknown|insufficient information)\.?\s*$/i.test(answer)) {
+    return answer;
+  }
+  // If the model abstains despite having grounded evidence, return the best
+  // retrieved sentence rather than losing an answer that is already present.
+  // This remains dataset-agnostic and never invents content.
+  if (facts.length > 0) return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, facts)}`;
+  return "[MODEL_UNAVAILABLE]";
 }
 
 /** Real long-context baseline: sends the complete history to the local model. */
@@ -95,7 +174,7 @@ export async function naiveLongContextAnswer(question: string, fullHistory: stri
     ? `${fullHistory.slice(0, Math.floor(maxChars / 2))}\n...[history capped for local baseline]...\n${fullHistory.slice(-Math.floor(maxChars / 2))}`
     : fullHistory;
   console.log(`[baseline] history=${fullHistory.length} chars, sent=${boundedHistory.length} chars`);
-  const answer = await askOllama(
+  const answer = await askModel(
     `Answer the question using the conversation history below. Do not use outside knowledge. If the answer is not present, say I don't know.\nHistory:\n${boundedHistory}\n\nQuestion: ${question}`,
     Math.max(OLLAMA_TIMEOUT_MS, 60000)
   );

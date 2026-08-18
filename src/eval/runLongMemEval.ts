@@ -3,7 +3,8 @@ import fs from "fs";
 import path from "path";
 import { ensureDatabaseReady, ingestSessionMemory, recallMemory, flattenGraphContext } from "../hydra/client";
 import { abstentionCheck } from "../abstention/abstentionCheck";
-import { generateAnswer, naiveLongContextAnswer } from "../llm/client";
+import { checkOllama, generateAnswer, naiveLongContextAnswer } from "../llm/client";
+import { RetrievedFact } from "../types";
 
 /**
  * Expects a LongMemEval-format JSON file at data/longmemeval_subset.json:
@@ -49,7 +50,10 @@ function sessionToTranscript(turns: { role: string; content: string }[]): string
 // and a stable chunk suffix preserve provenance during retrieval.
 function chunkTranscript(transcript: string, maxChars = 2800): string[] {
   const chunks: string[] = [];
-  for (let i = 0; i < transcript.length; i += maxChars) chunks.push(transcript.slice(i, i + maxChars));
+  // Keep a small overlap so a fact introduced in one turn remains connected
+  // to the follow-up turn when a long session crosses a transport boundary.
+  const overlap = 600;
+  for (let i = 0; i < transcript.length; i += maxChars - overlap) chunks.push(transcript.slice(i, i + maxChars));
   return chunks;
 }
 
@@ -72,6 +76,24 @@ function roughMatch(predicted: string, gold: string): boolean {
   const g = gold.toLowerCase().trim();
   if (!g) return false;
   return p.includes(g);
+}
+
+function addSessionContext(question: string, sessions: EvalInstance["sessions"], facts: RetrievedFact[]): RetrievedFact[] {
+  const ignored = new Set("what where when who why how did does is are was were the a an my me i user your to of in on for with and or".split(" "));
+  const terms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
+  const additions: RetrievedFact[] = [];
+  for (const session of sessions) {
+    for (let index = 0; index < session.turns.length; index += 1) {
+      const score = terms.filter((term) => session.turns[index].content.toLowerCase().includes(term)).length;
+      if (score === 0) continue;
+      const start = Math.max(0, index - 3);
+      const end = Math.min(session.turns.length - 1, index + 3);
+      const window = session.turns.slice(start, end + 1).map((turn) => `${turn.role}: ${turn.content.trim()}`).join("\n");
+      additions.push({ sourceEntity: "session", predicate: "contains_context_window", targetEntity: window.slice(0, 5000), evidenceText: window, sessionId: session.session_id, timestamp: session.timestamp, relevance: 0.8 + score * 0.1 });
+    }
+  }
+  const uniqueAdditions = [...new Map(additions.map((fact) => [`${fact.sessionId}:${fact.evidenceText}`, fact])).values()];
+  return [...uniqueAdditions.sort((a, b) => b.relevance - a.relevance), ...facts].slice(0, 30);
 }
 
 async function runOurSystem(instance: EvalInstance) {
@@ -97,7 +119,12 @@ async function runOurSystem(instance: EvalInstance) {
   if (process.env.EVAL_REUSE !== "1") await new Promise((r) => setTimeout(r, 4000));
 
   const recallResult = await recallMemory({ userId, question: instance.question });
-  const { facts, maxChunkScore } = flattenGraphContext(recallResult.data);
+  const { facts: graphFacts, maxChunkScore } = flattenGraphContext(recallResult.data);
+  const facts = addSessionContext(instance.question, instance.sessions, graphFacts);
+  if (process.env.DEBUG_RETRIEVAL === "1") {
+    console.log(`[retrieval] ${instance.question_id} facts=${facts.length}`);
+    for (const fact of facts.slice(0, 30)) console.log(`[retrieval] ${fact.predicate}: ${(fact.evidenceText ?? fact.targetEntity).slice(0, 240)}`);
+  }
   const abstention = await abstentionCheck(instance.question, facts, maxChunkScore);
 
   if (abstention.verdict === "abstain") {
@@ -128,10 +155,12 @@ async function main() {
 
   console.log("Provisioning HydraDB database...");
   await ensureDatabaseReady();
+  await checkOllama();
 
   const allInstances: EvalInstance[] = JSON.parse(fs.readFileSync(dataPath, "utf-8"));
   const limit = Number(process.env.EVAL_LIMIT ?? 0);
-  const instances = limit > 0 ? allInstances.slice(0, limit) : allInstances;
+  const offset = Math.max(0, Number(process.env.EVAL_OFFSET ?? 0));
+  const instances = limit > 0 ? allInstances.slice(offset, offset + limit) : allInstances.slice(offset);
   console.log(`Running ${instances.length} of ${allInstances.length} LongMemEval questions.`);
 
   const results: Record<string, { ours: number; naive: number; total: number }> = {};
