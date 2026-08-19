@@ -45,8 +45,15 @@ export async function abstentionCheck(
   // useful when the graph stores the answer across adjacent conversational
   // turns and the small judge model incorrectly labels that evidence as
   // unsupported.
-  const ignored = new Set("what where when who why how did does is are was were the a an my me user your to of in on for with and or".split(" "));
+  const ignored = new Set("what where when who why how did does is are was were the a an my me user your to of in on for with and or this that current before changed say said project projects used use using library libraries information recent conversation conversations".split(" "));
   const terms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
+  if (terms.length === 0) {
+    return {
+      verdict: "abstain",
+      reason: "the question has no specific grounded terms to retrieve",
+      signals: { retrievalHit, maxChunkScore, entailment: "unsupported" },
+    };
+  }
   const lexicalContextHit = facts.some((fact) => {
     if (!fact.evidenceText && !fact.targetEntity) return false;
     const text = (fact.evidenceText ?? fact.targetEntity).toLowerCase();
