@@ -42,7 +42,7 @@ export function extractiveEvidence(question: string, facts: RetrievedFact[]): st
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance)
     .filter((item, index, all) => all.findIndex((candidate) => candidate.sentence === item.sentence) === index)
-    .slice(0, 8);
+    .slice(0, 2);
   return selected.length ? selected.map((item) => item.sentence).join(" ") : compactFacts(facts).slice(0, 3).map(factLine).join("; ");
 }
 

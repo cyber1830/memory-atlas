@@ -24,6 +24,23 @@ export async function abstentionCheck(
 ): Promise<AbstentionResult> {
   const retrievalHit = facts.length > 0;
 
+  // A requested year is a hard constraint. Do not answer from a related fact
+  // when the history never mentions that year (for example, a degree question
+  // asking specifically about 1967).
+  const requestedYears = question.match(/\b(?:19|20)\d{2}\b/g) ?? [];
+  if (requestedYears.length > 0) {
+    const evidenceText = facts
+      .map((fact) => `${fact.evidenceText ?? ''} ${fact.targetEntity} ${fact.temporalDetails ?? ''}`)
+      .join(' ');
+    if (!requestedYears.every((year) => evidenceText.includes(year))) {
+      return {
+        verdict: "abstain",
+        reason: "the requested date is not present in the retrieved memory",
+        signals: { retrievalHit, maxChunkScore, entailment: "unsupported" },
+      };
+    }
+  }
+
   // A same-session lexical context hit is a grounded retrieval signal. It is
   // useful when the graph stores the answer across adjacent conversational
   // turns and the small judge model incorrectly labels that evidence as
