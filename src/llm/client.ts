@@ -96,7 +96,16 @@ async function askGroq(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise<s
     const response = await fetch(GROQ_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: GROQ_MODEL, temperature: 0, max_tokens: 256, messages: [{ role: "user", content: prompt }] }),
+      // GPT-OSS models may spend part of a small completion budget on
+      // reasoning, leaving message.content empty. Give the model enough room
+      // to finish the short grounded answer.
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0,
+        max_tokens: Number(process.env.GROQ_MAX_TOKENS ?? 1024),
+        reasoning_effort: process.env.GROQ_REASONING_EFFORT ?? "low",
+        messages: [{ role: "user", content: prompt }],
+      }),
       signal: controller.signal,
     });
     if (!response.ok) {
