@@ -57,7 +57,18 @@ function chunkTranscript(transcript: string, maxChars = 2800): string[] {
   return chunks;
 }
 
-async function ingestWithRetry(params: Parameters<typeof ingestSessionMemory>[0], attempts = 4): Promise<void> {
+function parseRetryAfterSeconds(error: unknown): number | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/retry in (\d+(?:\.\d+)?)\s*second/i);
+  return match ? Number(match[1]) : null;
+}
+
+function isRateLimited(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /429|RATE_LIMITED/i.test(message);
+}
+
+async function ingestWithRetry(params: Parameters<typeof ingestSessionMemory>[0], attempts = 10): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -65,7 +76,13 @@ async function ingestWithRetry(params: Parameters<typeof ingestSessionMemory>[0]
       return;
     } catch (error) {
       lastError = error;
-      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+      if (attempt >= attempts) break;
+      if (isRateLimited(error)) {
+        const hinted = parseRetryAfterSeconds(error);
+        const waitMs = (hinted ?? 5) * 1000 + 500;
+        console.warn(`[hydra] rate limited, waiting ${Math.round(waitMs / 1000)}s (attempt ${attempt}/${attempts})`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      } else await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
     }
   }
   throw lastError;
@@ -109,7 +126,8 @@ async function runOurSystem(instance: EvalInstance) {
         transcript: chunks[index],
       });
       // Avoid HydraDB's per-second request budget when a session has many chunks.
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      const pacingMs = Number(process.env.HYDRA_INGEST_PACING_MS ?? 8500);
+      await new Promise((resolve) => setTimeout(resolve, pacingMs));
     }
   }
 
@@ -176,8 +194,22 @@ async function main() {
     // Keep HydraDB ingestion/query traffic serial across benchmark instances;
     // the service has a per-second request budget and parallel instances can
     // turn a transient network error into a failed whole run.
-    const ours = await runOurSystem(instance);
-    const naive = await runNaiveBaseline(instance);
+    let ours: any;
+    let naive: any;
+    try {
+      ours = await runOurSystem(instance);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[${type}] ${instance.question_id}: system error: ${message}`);
+      ours = { predicted: "[SYSTEM_ERROR]", verdict: "error", factCount: 0, reason: message };
+    }
+    try {
+      naive = await runNaiveBaseline(instance);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[${type}] ${instance.question_id}: baseline error: ${message}`);
+      naive = { predicted: "[BASELINE_ERROR]" };
+    }
 
     const oursCorrect = isAbstentionCase
       ? ours.verdict === "abstain"
