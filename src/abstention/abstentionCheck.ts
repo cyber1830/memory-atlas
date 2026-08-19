@@ -41,6 +41,24 @@ export async function abstentionCheck(
     }
   }
 
+  // Named libraries/tools are exact constraints. Generic words such as
+  // "login" or "session" must not be treated as proof that Flask-Login (or
+  // another specifically named tool) was used.
+  const namedTools = question.match(/\b[A-Za-z][A-Za-z0-9]+-[A-Za-z][A-Za-z0-9]+\b/g) ?? [];
+  if (namedTools.length > 0) {
+    const evidenceText = facts
+      .map((fact) => `${fact.evidenceText ?? ''} ${fact.targetEntity}`)
+      .join(' ')
+      .toLowerCase();
+    if (!namedTools.every((tool) => evidenceText.includes(tool.toLowerCase()))) {
+      return {
+        verdict: "abstain",
+        reason: "the specifically named tool is not present in the retrieved memory",
+        signals: { retrievalHit, maxChunkScore, entailment: "unsupported" },
+      };
+    }
+  }
+
   // A same-session lexical context hit is a grounded retrieval signal. It is
   // useful when the graph stores the answer across adjacent conversational
   // turns and the small judge model incorrectly labels that evidence as
