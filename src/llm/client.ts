@@ -54,7 +54,13 @@ async function askOllama(prompt: string, timeoutMs = OLLAMA_TIMEOUT_MS): Promise
     const response = await fetch(OLLAMA_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: OLLAMA_MODEL, prompt, stream: false, options: { temperature: 0, num_ctx: OLLAMA_NUM_CTX } }),
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt,
+        stream: false,
+        keep_alive: "30m",
+        options: { temperature: 0, num_ctx: OLLAMA_NUM_CTX },
+      }),
       signal: controller.signal,
     });
     if (!response.ok) {
