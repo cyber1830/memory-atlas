@@ -126,7 +126,12 @@ async function runOurSystem(instance: EvalInstance) {
         transcript: chunks[index],
       });
       // Avoid HydraDB's per-second request budget when a session has many chunks.
-      const pacingMs = Number(process.env.HYDRA_INGEST_PACING_MS ?? 8500);
+      // Pace dynamically from each chunk's estimated token size. The safety
+      // margin absorbs embedding/extraction overhead against HydraDB quota.
+      const estTokens = chunks[index].length / 4;
+      const tokensPerMin = Number(process.env.HYDRA_TOKENS_PER_MIN ?? 5000);
+      const safetyMargin = Number(process.env.HYDRA_PACING_SAFETY ?? 1.6);
+      const pacingMs = Math.max(1000, Math.ceil((estTokens / tokensPerMin) * 60000 * safetyMargin));
       await new Promise((resolve) => setTimeout(resolve, pacingMs));
     }
   }
