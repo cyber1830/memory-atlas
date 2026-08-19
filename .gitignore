@@ -6,3 +6,4 @@ dist
 # Benchmark downloads are large and may have separate dataset licenses.
 data/official/
 data/eval-results.json
+data/beam-smoke-results.json

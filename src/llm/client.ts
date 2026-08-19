@@ -15,6 +15,9 @@ function factLine(f: RetrievedFact): string {
 }
 
 function compactFacts(facts: RetrievedFact[]): RetrievedFact[] {
+  // Keep enough adjacent-turn evidence for multi-turn facts. The local fast
+  // mode skips the judge call; it must not also discard the context needed to
+  // answer the question.
   return facts.slice().sort((a, b) => b.relevance - a.relevance).slice(0, 15);
 }
 
@@ -29,15 +32,17 @@ export function extractiveEvidence(question: string, facts: RetrievedFact[]): st
     ...item,
     score: queryTerms.filter((term) => item.sentence.toLowerCase().includes(term)).length + item.fact.relevance * 0.1,
   })).sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance);
-  const bestPerFact = new Map<RetrievedFact, typeof ranked[number]>();
+  const bestPerFact = new Map<RetrievedFact, typeof ranked[number][]>();
   for (const item of ranked) {
-    const current = bestPerFact.get(item.fact);
-    if (!current || item.score > current.score) bestPerFact.set(item.fact, item);
+    const current = bestPerFact.get(item.fact) ?? [];
+    if (current.length < 3) current.push(item);
+    bestPerFact.set(item.fact, current);
   }
-  const selected = [...bestPerFact.values()]
+  const selected = [...bestPerFact.values()].flat()
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || b.fact.relevance - a.fact.relevance)
-    .slice(0, 4);
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.sentence === item.sentence) === index)
+    .slice(0, 8);
   return selected.length ? selected.map((item) => item.sentence).join(" ") : compactFacts(facts).slice(0, 3).map(factLine).join("; ");
 }
 
@@ -157,7 +162,8 @@ export async function generateAnswer(question: string, facts: RetrievedFact[]): 
   const answer = await askModel(
     `Answer using ONLY the retrieved evidence. Return the shortest direct answer possible: usually the exact name, title, place, number, or phrase requested. Do not add background, explanations, guesses, or unrelated facts. Preserve chronology when facts conflict. If the requested answer is not directly supported, reply exactly: I don't know.\nQuestion: ${question}\nRetrieved evidence:\n${evidence.map(factLine).join("\n")}`
   );
-  if (answer && !/^\s*(i\s+don['’]?t\s+know|unknown|insufficient information)\.?\s*$/i.test(answer)) {
+  const looksLikeFragment = Boolean(answer && (/^\s*[$€£]?\d+(?:\.\d+)?\s*$/.test(answer) || answer.trim().split(/\s+/).length < 2));
+  if (answer && !looksLikeFragment && !/^\s*(i\s+don['’]?t\s+know|unknown|insufficient information)\.?\s*$/i.test(answer)) {
     return answer;
   }
   // If the model abstains despite having grounded evidence, return the best

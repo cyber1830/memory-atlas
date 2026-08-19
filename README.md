@@ -118,6 +118,21 @@ with your own numbers instead of a citation.
    previously-stated fact (job change, moved cities, changed a preference).
 2. Ask a question that requires the *current* value — show the answer
    citing the session it came from.
+
+### Render deployment
+
+1. Create a new Web Service from this repository on Render.
+2. Render will use `render.yaml`; add `HYDRA_DB_API_KEY` and `GROQ_API_KEY` as
+   secret environment variables.
+3. Keep `LLM_PROVIDER=groq` for the hosted demo. Local Ollama is only for
+   offline development because a Render service cannot access your laptop's
+   Ollama process.
+4. Open `/index.html` after the health check becomes live.
+
+The demo's differentiator is **fact evolution**: an older relationship stays
+visible in the evidence trail while the newer relationship becomes current.
+This makes supersession inspectable instead of hiding it behind a single
+vector-search result.
 3. Show the live graph view (`GET /graph`) and point at the relation's
    `temporal_details` / `timestamp` fields as HydraDB's own record of when
    that fact was true — this is the "git-style temporal versioning" the

@@ -51,6 +51,17 @@ export async function abstentionCheck(
     };
   }
 
+  // Fast local evaluation mode: avoid a second long Ollama call for the
+  // entailment judge. This is opt-in and only answers when retrieval returned
+  // evidence; the normal two-signal abstention gate remains the default.
+  if (process.env.SKIP_ENTAILMENT_JUDGE === "1") {
+    return {
+      verdict: "answer",
+      reason: "retrieved evidence available (fast mode)",
+      signals: { retrievalHit, maxChunkScore, entailment: "entailed" },
+    };
+  }
+
   const entailment = await judgeEntailment(question, facts);
 
   if (entailment === "unsupported") {
