@@ -184,8 +184,11 @@ export async function generateAnswer(question: string, facts: RetrievedFact[]): 
   // If the model abstains despite having grounded evidence, return the best
   // retrieved sentence rather than losing an answer that is already present.
   // This remains dataset-agnostic and never invents content.
-  if (facts.length > 0) return `[MODEL_UNAVAILABLE] ${extractiveEvidence(question, facts)}`;
-  return "[MODEL_UNAVAILABLE]";
+  // Deterministic, grounded fallback for hosted demos when the model is
+  // unavailable. This is evidence extraction—not invented synthesis—and is
+  // intentionally limited to the most relevant sentences.
+  if (facts.length > 0) return extractiveEvidence(question, facts);
+  return "I don't have enough grounded memory to answer confidently.";
 }
 
 /** Real long-context baseline: sends the complete history to the local model. */
