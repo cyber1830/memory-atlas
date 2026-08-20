@@ -164,3 +164,15 @@ vector-search result.
 ## License
 
 MIT
+
+## Attribution
+
+- [HydraDB](https://github.com/hydradatabase/hydradb) and `@hydradb/sdk` power
+  graph-native ingestion, entity resolution, temporal relationships, and
+  hybrid retrieval.
+- [LongMemEval](https://github.com/xiaowu0162/LongMemEval) and
+  [BEAM](https://github.com/mohammadtavakoli78/BEAM) provide the benchmark
+  formats and evaluation conversations used by the adapters in `src/eval/`.
+- The hosted demo uses Groq-compatible OpenAI-style inference; local
+  development can use Ollama. API keys are supplied through environment
+  variables and are never committed.
