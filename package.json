@@ -11,8 +11,8 @@
     "eval:beam": "ts-node-dev --transpile-only src/eval/runBeamSmoke.ts",
     "demo:seed": "ts-node-dev --transpile-only src/demo/seedDataset.ts",
     "demo:seed:beam": "ts-node-dev --transpile-only src/demo/seedBeam.ts",
-    "eval:normalize": "ts-node-dev --transpile-only src/eval/normalizeLongMemEval.ts"
-    ,"test:extractive": "npm run build && node dist/eval/testExtractive.js"
+    "eval:normalize": "ts-node-dev --transpile-only src/eval/normalizeLongMemEval.ts",
+    "test:extractive": "npm run build && node dist/eval/testExtractive.js"
   },
   "dependencies": {
     "@hydradb/sdk": "^2.1.2",

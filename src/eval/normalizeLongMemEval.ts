@@ -18,8 +18,17 @@ function toIsoTimestamp(value: string): string {
 }
 
 function main() {
-  const input = process.argv[2] ?? path.join("data", "official", "longmemeval", "longmemeval_s_cleaned.json");
-  const output = process.argv[3] ?? path.join("data", "official", "longmemeval", "longmemeval_s_normalized.json");
+  const input =
+    process.argv[2] ??
+    path.join("data", "official", "longmemeval", "longmemeval_s_cleaned.json");
+  const output =
+    process.argv[3] ??
+    path.join(
+      "data",
+      "official",
+      "longmemeval",
+      "longmemeval_s_normalized.json",
+    );
   const raw = JSON.parse(fs.readFileSync(input, "utf8")) as RawInstance[];
 
   const normalized = raw.map((item) => ({
@@ -29,7 +38,9 @@ function main() {
     question_type: item.question_type,
     answer_session_ids: item.answer_session_ids ?? [],
     sessions: item.haystack_sessions.map((turns, index) => ({
-      session_id: item.haystack_session_ids[index] ?? `${item.question_id}-session-${index + 1}`,
+      session_id:
+        item.haystack_session_ids[index] ??
+        `${item.question_id}-session-${index + 1}`,
       timestamp: toIsoTimestamp(item.haystack_dates[index] ?? ""),
       turns,
     })),
@@ -37,8 +48,13 @@ function main() {
 
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(normalized));
-  const sessionCount = normalized.reduce((sum, item) => sum + item.sessions.length, 0);
-  console.log(`Normalized ${normalized.length} questions and ${sessionCount} sessions.`);
+  const sessionCount = normalized.reduce(
+    (sum, item) => sum + item.sessions.length,
+    0,
+  );
+  console.log(
+    `Normalized ${normalized.length} questions and ${sessionCount} sessions.`,
+  );
   console.log(`Wrote ${output}`);
 }
 

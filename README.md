@@ -28,7 +28,7 @@ on top:
   `GraphRelationEvidence` type — this is the hybrid retrieval + temporal
   ordering the problem statement asks for, read directly from HydraDB
   rather than stitched together by hand.
-- **Abstention** — *not* something HydraDB decides for you. This project's
+- **Abstention** — _not_ something HydraDB decides for you. This project's
   actual contribution is the two-signal gate in
   `src/abstention/abstentionCheck.ts`: did retrieval return anything above
   a relevance threshold, **and** does an LLM judge — shown only the
@@ -116,7 +116,7 @@ with your own numbers instead of a citation.
 
 1. Ingest 2-3 short synthetic sessions live, including one that changes a
    previously-stated fact (job change, moved cities, changed a preference).
-2. Ask a question that requires the *current* value — show the answer
+2. Ask a question that requires the _current_ value — show the answer
    citing the session it came from.
 
 ### Render deployment
@@ -132,16 +132,13 @@ with your own numbers instead of a citation.
 The demo's differentiator is **fact evolution**: an older relationship stays
 visible in the evidence trail while the newer relationship becomes current.
 This makes supersession inspectable instead of hiding it behind a single
-vector-search result.
-3. Show the live graph view (`GET /graph`) and point at the relation's
-   `temporal_details` / `timestamp` fields as HydraDB's own record of when
-   that fact was true — this is the "git-style temporal versioning" the
-   graph gives you natively.
-4. Ask something never mentioned — show the system abstain, and point at
-   the two signals (`retrievalHit`, `entailment`) in the response as the
-   evidence trail, not just a refusal.
-5. Show the eval table: your system vs. the naive long-context baseline on
-   the abstention category specifically.
+vector-search result. 3. Show the live graph view (`GET /graph`) and point at the relation's
+`temporal_details` / `timestamp` fields as HydraDB's own record of when
+that fact was true — this is the "git-style temporal versioning" the
+graph gives you natively. 4. Ask something never mentioned — show the system abstain, and point at
+the two signals (`retrievalHit`, `entailment`) in the response as the
+evidence trail, not just a refusal. 5. Show the eval table: your system vs. the naive long-context baseline on
+the abstention category specifically.
 
 ## What's simplified for hackathon time (documented, not hidden)
 

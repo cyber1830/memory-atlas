@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { recallMemory, flattenGraphContext, fetchAllRelations } from "../hydra/client";
+import {
+  recallMemory,
+  flattenGraphContext,
+  fetchAllRelations,
+} from "../hydra/client";
 import { abstentionCheck } from "../abstention/abstentionCheck";
 import { generateAnswer } from "../llm/client";
 
@@ -17,7 +21,8 @@ export const queryRouter = Router();
  */
 queryRouter.post("/query", async (req, res) => {
   const { userId, question } = req.body ?? {};
-  if (!userId || !question) return res.status(400).json({ error: "userId and question are required" });
+  if (!userId || !question)
+    return res.status(400).json({ error: "userId and question are required" });
 
   try {
     const recallResult = await recallMemory({ userId, question });
@@ -52,7 +57,8 @@ queryRouter.post("/query", async (req, res) => {
 /** GET /graph?userId=... — full relation dump for the demo visualization. */
 queryRouter.get("/graph", async (req, res) => {
   const userId = req.query.userId as string | undefined;
-  if (!userId) return res.status(400).json({ error: "userId query param is required" });
+  if (!userId)
+    return res.status(400).json({ error: "userId query param is required" });
 
   try {
     const result = await fetchAllRelations(userId);
@@ -72,7 +78,7 @@ queryRouter.get("/graph", async (req, res) => {
         label: evidence.canonicalPredicate ?? evidence.rawPredicate,
         timestamp: evidence.timestamp,
         temporalDetails: evidence.temporalDetails,
-      }))
+      })),
     );
 
     res.json({
@@ -86,7 +92,8 @@ queryRouter.get("/graph", async (req, res) => {
 
 queryRouter.get("/stats", async (req, res) => {
   const userId = req.query.userId as string | undefined;
-  if (!userId) return res.status(400).json({ error: "userId query param is required" });
+  if (!userId)
+    return res.status(400).json({ error: "userId query param is required" });
   try {
     const result = await fetchAllRelations(userId);
     const triplets = result.data?.relations ?? [];
@@ -99,6 +106,8 @@ queryRouter.get("/stats", async (req, res) => {
     }
     res.json({ entities: entities.size, relationships, connected: true });
   } catch (err: any) {
-    res.status(502).json({ connected: false, error: err.message ?? "stats unavailable" });
+    res
+      .status(502)
+      .json({ connected: false, error: err.message ?? "stats unavailable" });
   }
 });

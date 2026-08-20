@@ -20,7 +20,7 @@ const RELEVANCE_THRESHOLD = 0.15; // tune against HydraDB's actual score distrib
 export async function abstentionCheck(
   question: string,
   facts: RetrievedFact[],
-  maxChunkScore: number
+  maxChunkScore: number,
 ): Promise<AbstentionResult> {
   const retrievalHit = facts.length > 0;
 
@@ -30,8 +30,11 @@ export async function abstentionCheck(
   const requestedYears = question.match(/\b(?:19|20)\d{2}\b/g) ?? [];
   if (requestedYears.length > 0) {
     const evidenceText = facts
-      .map((fact) => `${fact.evidenceText ?? ''} ${fact.targetEntity} ${fact.temporalDetails ?? ''}`)
-      .join(' ');
+      .map(
+        (fact) =>
+          `${fact.evidenceText ?? ""} ${fact.targetEntity} ${fact.temporalDetails ?? ""}`,
+      )
+      .join(" ");
     if (!requestedYears.every((year) => evidenceText.includes(year))) {
       return {
         verdict: "abstain",
@@ -44,16 +47,20 @@ export async function abstentionCheck(
   // Named libraries/tools are exact constraints. Generic words such as
   // "login" or "session" must not be treated as proof that Flask-Login (or
   // another specifically named tool) was used.
-  const namedTools = question.match(/\b[A-Za-z][A-Za-z0-9]+-[A-Za-z][A-Za-z0-9]+\b/g) ?? [];
+  const namedTools =
+    question.match(/\b[A-Za-z][A-Za-z0-9]+-[A-Za-z][A-Za-z0-9]+\b/g) ?? [];
   if (namedTools.length > 0) {
     const evidenceText = facts
-      .map((fact) => `${fact.evidenceText ?? ''} ${fact.targetEntity}`)
-      .join(' ')
+      .map((fact) => `${fact.evidenceText ?? ""} ${fact.targetEntity}`)
+      .join(" ")
       .toLowerCase();
-    if (!namedTools.every((tool) => evidenceText.includes(tool.toLowerCase()))) {
+    if (
+      !namedTools.every((tool) => evidenceText.includes(tool.toLowerCase()))
+    ) {
       return {
         verdict: "abstain",
-        reason: "the specifically named tool is not present in the retrieved memory",
+        reason:
+          "the specifically named tool is not present in the retrieved memory",
         signals: { retrievalHit, maxChunkScore, entailment: "unsupported" },
       };
     }
@@ -63,8 +70,14 @@ export async function abstentionCheck(
   // useful when the graph stores the answer across adjacent conversational
   // turns and the small judge model incorrectly labels that evidence as
   // unsupported.
-  const ignored = new Set("what where when who why how did does is are was were the a an my me user your to of in on for with and or this that current before changed say said project projects used use using library libraries information recent conversation conversations".split(" "));
-  const terms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((term) => !ignored.has(term));
+  const ignored = new Set(
+    "what where when who why how did does is are was were the a an my me user your to of in on for with and or this that current before changed say said project projects used use using library libraries information recent conversation conversations".split(
+      " ",
+    ),
+  );
+  const terms = (question.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter(
+    (term) => !ignored.has(term),
+  );
   if (terms.length === 0) {
     return {
       verdict: "abstain",

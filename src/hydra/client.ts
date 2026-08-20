@@ -208,8 +208,12 @@ export function flattenGraphContext(
         targetEntity: text,
         predicate: "contains",
         evidenceText: text,
-        sessionId: raw.additionalMetadata?.session_id ?? raw.additional_metadata?.session_id,
-        timestamp: raw.additionalMetadata?.timestamp ?? raw.additional_metadata?.timestamp,
+        sessionId:
+          raw.additionalMetadata?.session_id ??
+          raw.additional_metadata?.session_id,
+        timestamp:
+          raw.additionalMetadata?.timestamp ??
+          raw.additional_metadata?.timestamp,
         relevance: raw.relevancyScore ?? 0,
       });
     }
